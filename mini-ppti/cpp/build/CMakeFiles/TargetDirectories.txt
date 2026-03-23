@@ -1,0 +1,3 @@
+/mnt/f/Research 2/mini-ppti/cpp/build/CMakeFiles/mini_ppti.dir
+/mnt/f/Research 2/mini-ppti/cpp/build/CMakeFiles/edit_cache.dir
+/mnt/f/Research 2/mini-ppti/cpp/build/CMakeFiles/rebuild_cache.dir
