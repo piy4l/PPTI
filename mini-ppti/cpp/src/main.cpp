@@ -1,12 +1,13 @@
 #include "ckks_runner.h"
 
+#include <iomanip>
 #include <iostream>
 #include <vector>
 
 static void print_vector(const std::string& label, const std::vector<double>& x) {
     std::cout << label << ": [";
     for (std::size_t i = 0; i < x.size(); ++i) {
-        std::cout << x[i];
+        std::cout << std::fixed << std::setprecision(6) << x[i];
         if (i + 1 < x.size()) {
             std::cout << ", ";
         }
@@ -20,8 +21,8 @@ int main() {
 
         std::cout << runtime.info() << "\n";
 
-        runtime.init();
-        runtime.keygen();
+        runtime.init(2, 50, 8);
+        runtime.keygen({1, -1, 2, -2});
 
         std::cout << runtime.info() << "\n";
 
