@@ -1110,4 +1110,5 @@ CMakeFiles/mini_ppti.dir/src/main.cpp.o: \
   /usr/local/include/openfhe/pke/scheme/bfvrns/gen-cryptocontext-bfvrns-params.h \
   /usr/local/include/openfhe/pke/scheme/bgvrns/gen-cryptocontext-bgvrns.h \
   /usr/local/include/openfhe/pke/scheme/bgvrns/gen-cryptocontext-bgvrns-internal.h \
-  /usr/local/include/openfhe/pke/scheme/bgvrns/gen-cryptocontext-bgvrns-params.h
+  /usr/local/include/openfhe/pke/scheme/bgvrns/gen-cryptocontext-bgvrns-params.h \
+  /Users/souvik/Desktop/PPTI/mini-ppti/cpp/include/profiler.h
