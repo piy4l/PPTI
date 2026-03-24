@@ -8,9 +8,9 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/Users/souvik/Desktop/PPTI/mini-ppti/cpp/src/ckks_runner.cpp" "CMakeFiles/mini_ppti.dir/src/ckks_runner.cpp.o" "gcc" "CMakeFiles/mini_ppti.dir/src/ckks_runner.cpp.o.d"
-  "/Users/souvik/Desktop/PPTI/mini-ppti/cpp/src/main.cpp" "CMakeFiles/mini_ppti.dir/src/main.cpp.o" "gcc" "CMakeFiles/mini_ppti.dir/src/main.cpp.o.d"
-  "/Users/souvik/Desktop/PPTI/mini-ppti/cpp/src/profiler.cpp" "CMakeFiles/mini_ppti.dir/src/profiler.cpp.o" "gcc" "CMakeFiles/mini_ppti.dir/src/profiler.cpp.o.d"
+  "/mnt/f/Research 2/mini-ppti/cpp/src/ckks_runner.cpp" "CMakeFiles/mini_ppti.dir/src/ckks_runner.cpp.o" "gcc" "CMakeFiles/mini_ppti.dir/src/ckks_runner.cpp.o.d"
+  "/mnt/f/Research 2/mini-ppti/cpp/src/main.cpp" "CMakeFiles/mini_ppti.dir/src/main.cpp.o" "gcc" "CMakeFiles/mini_ppti.dir/src/main.cpp.o.d"
+  "/mnt/f/Research 2/mini-ppti/cpp/src/profiler.cpp" "CMakeFiles/mini_ppti.dir/src/profiler.cpp.o" "gcc" "CMakeFiles/mini_ppti.dir/src/profiler.cpp.o.d"
   )
 
 # Targets to which this target links which contain Fortran sources.

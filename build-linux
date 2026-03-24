@@ -1,0 +1,9 @@
+cd /mnt/f/Research 2/mini-ppti/cpp
+rm -rf build
+
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DOpenFHE_DIR=/usr/local/lib/cmake/openfhe
+
+cmake --build build -j"$(nproc)"
+./build/mini_ppti

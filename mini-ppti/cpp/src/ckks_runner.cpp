@@ -43,13 +43,63 @@ void CKKSRuntime::keygen(const std::vector<int32_t>& rotationIndices) {
     keys_generated_ = true;
 }
 
+void CKKSRuntime::require_initialized(const std::string& fn) const {
+    if (!initialized_) {
+        throw std::runtime_error(fn + " requires init()");
+    }
+}
+
 void CKKSRuntime::require_ready(const std::string& fn) const {
     if (!initialized_ || !keys_generated_) {
         throw std::runtime_error(fn + " requires init() and keygen()");
     }
 }
 
-std::vector<double> CKKSRuntime::decrypt_to_vector(const Ciphertext<DCRTPoly>& ct,
+CKKSRuntime::Plaintext CKKSRuntime::encode(const std::vector<double>& x) const {
+    require_initialized("encode()");
+    return cc_->MakeCKKSPackedPlaintext(x);
+}
+
+CKKSRuntime::Ciphertext CKKSRuntime::encrypt(const Plaintext& plaintext) const {
+    require_ready("encrypt()");
+    return cc_->Encrypt(keys_.publicKey, plaintext);
+}
+
+std::vector<double> CKKSRuntime::decrypt_and_decode(const Ciphertext& ciphertext,
+                                                    std::size_t length) const {
+    require_ready("decrypt_and_decode()");
+    return decrypt_to_vector(ciphertext, length);
+}
+
+CKKSRuntime::Ciphertext CKKSRuntime::add(const Ciphertext& lhs, const Ciphertext& rhs) const {
+    require_ready("add()");
+    return cc_->EvalAdd(lhs, rhs);
+}
+
+CKKSRuntime::Ciphertext CKKSRuntime::multiply(const Ciphertext& lhs,
+                                              const Ciphertext& rhs) const {
+    require_ready("multiply()");
+    return cc_->EvalMult(lhs, rhs);
+}
+
+CKKSRuntime::Ciphertext CKKSRuntime::multiply_plain(const Ciphertext& lhs, double scalar) const {
+    require_ready("multiply_plain()");
+    return cc_->EvalMult(lhs, scalar);
+}
+
+CKKSRuntime::Ciphertext CKKSRuntime::multiply_plaintext(const Ciphertext& lhs,
+                                                       const std::vector<double>& rhs) const {
+    require_ready("multiply_plaintext()");
+    auto rhs_plaintext = encode(rhs);
+    return cc_->EvalMult(lhs, rhs_plaintext);
+}
+
+CKKSRuntime::Ciphertext CKKSRuntime::rotate(const Ciphertext& ciphertext, int steps) const {
+    require_ready("rotate()");
+    return cc_->EvalRotate(ciphertext, steps);
+}
+
+std::vector<double> CKKSRuntime::decrypt_to_vector(const Ciphertext& ct,
                                                    std::size_t length) const {
     Plaintext decrypted;
     cc_->Decrypt(keys_.secretKey, ct, &decrypted);
@@ -57,45 +107,34 @@ std::vector<double> CKKSRuntime::decrypt_to_vector(const Ciphertext<DCRTPoly>& c
     return decrypted->GetRealPackedValue();
 }
 
-std::vector<double> CKKSRuntime::encrypt_decrypt(const std::vector<double>& x) {
-    require_ready("encrypt_decrypt()");
-
-    Plaintext ptxt = cc_->MakeCKKSPackedPlaintext(x);
-    auto ct = cc_->Encrypt(keys_.publicKey, ptxt);
-    return decrypt_to_vector(ct, x.size());
+std::vector<double> CKKSRuntime::encrypt_decrypt(const std::vector<double>& x) const {
+    auto ptxt = encode(x);
+    auto ct = encrypt(ptxt);
+    return decrypt_and_decode(ct, x.size());
 }
 
-std::vector<double> CKKSRuntime::add_plain(const std::vector<double>& x, double c) {
-    require_ready("add_plain()");
-
-    Plaintext ptxt = cc_->MakeCKKSPackedPlaintext(x);
-    auto ct = cc_->Encrypt(keys_.publicKey, ptxt);
-
+std::vector<double> CKKSRuntime::add_plain(const std::vector<double>& x, double c) const {
+    auto ptxt = encode(x);
+    auto ct = encrypt(ptxt);
     std::vector<double> cvec(x.size(), c);
-    Plaintext cptxt = cc_->MakeCKKSPackedPlaintext(cvec);
-
-    auto out = cc_->EvalAdd(ct, cptxt);
-    return decrypt_to_vector(out, x.size());
+    auto cptxt = encode(cvec);
+    auto cct = encrypt(cptxt);
+    auto out = add(ct, cct);
+    return decrypt_and_decode(out, x.size());
 }
 
-std::vector<double> CKKSRuntime::mul_plain(const std::vector<double>& x, double c) {
-    require_ready("mul_plain()");
-
-    Plaintext ptxt = cc_->MakeCKKSPackedPlaintext(x);
-    auto ct = cc_->Encrypt(keys_.publicKey, ptxt);
-
-    auto out = cc_->EvalMult(ct, c);
-    return decrypt_to_vector(out, x.size());
+std::vector<double> CKKSRuntime::mul_plain(const std::vector<double>& x, double c) const {
+    auto ptxt = encode(x);
+    auto ct = encrypt(ptxt);
+    auto out = multiply_plain(ct, c);
+    return decrypt_and_decode(out, x.size());
 }
 
-std::vector<double> CKKSRuntime::rotate(const std::vector<double>& x, int steps) {
-    require_ready("rotate()");
-
-    Plaintext ptxt = cc_->MakeCKKSPackedPlaintext(x);
-    auto ct = cc_->Encrypt(keys_.publicKey, ptxt);
-
-    auto out = cc_->EvalRotate(ct, steps);
-    return decrypt_to_vector(out, x.size());
+std::vector<double> CKKSRuntime::rotate_plain(const std::vector<double>& x, int steps) const {
+    auto ptxt = encode(x);
+    auto ct = encrypt(ptxt);
+    auto out = rotate(ct, steps);
+    return decrypt_and_decode(out, x.size());
 }
 
 std::string CKKSRuntime::info() const {

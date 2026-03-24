@@ -6,16 +6,13 @@ from ops import Domain, OpKind
 
 def estimate_cost(graph: Graph) -> dict[str, Any]:
     """
-    Simple symbolic cost model.
+    Slightly improved symbolic cost model.
 
-    For now we estimate:
-    - number of HE<->MPC / HE<->PLAIN / MPC<->PLAIN boundaries
+    Counts:
+    - domain-boundary conversions
     - rough truncation count
     - rough rotation count
-    - ciphertext-ciphertext multiplication count
-
-    This is intentionally simple. Later we will replace parts of it
-    with measured costs from the C++ OpenFHE backend.
+    - rough ct-ct multiply count
     """
     stats = {
         "num_nodes": 0,
@@ -39,21 +36,17 @@ def estimate_cost(graph: Graph) -> dict[str, Any]:
         elif node.domain == Domain.PLAIN:
             stats["num_plain_nodes"] += 1
 
-        # Very rough op-level costs inside HE
         if node.domain == Domain.HE:
             if node.kind == OpKind.MATMUL:
-                # MatMul is usually the heaviest HE op family.
-                # Start with a symbolic rotation estimate of 1.
-                # Later we will replace this with dimension-aware logic.
+                stats["num_rotations"] += 2
+
+            elif node.kind == OpKind.SUM:
                 stats["num_rotations"] += 1
 
-            if node.kind == OpKind.MUL:
-                # Treat HE multiply as a ct-ct multiply candidate.
-                # Later we can distinguish ct-pt vs ct-ct.
+            elif node.kind == OpKind.MUL:
                 stats["num_ct_ct_mults"] += 1
                 stats["num_truncations"] += 1
 
-        # Count domain-boundary conversions on edges
         for pred in graph.predecessors(node.name):
             if pred.domain is None or node.domain is None:
                 continue
