@@ -18,7 +18,7 @@ struct Options {
 
 void print_usage(const char* argv0) {
     std::cout << "Usage: " << argv0
-              << " [--op pipeline_demo|linear_demo|linear_layer_demo|activation_demo|mlp_demo] [--n 8]\n";
+              << " [--op pipeline_demo|linear_demo|linear_layer_demo|packed_linear_layer_demo|packed_sequence_demo|activation_demo|mlp_demo] [--n 8]\n";
 }
 
 Options parse_args(int argc, char* argv[]) {
@@ -79,6 +79,17 @@ std::vector<double> expected_activation_output(const std::vector<double>& input)
 
 std::vector<double> apply_activation_polynomial(const std::vector<double>& input) {
     return expected_activation_output(input);
+}
+
+std::vector<double> apply_activation_polynomial(const std::vector<double>& input,
+                                                std::size_t active_slots,
+                                                std::size_t total_slots) {
+    std::vector<double> activated(total_slots, 0.0);
+    for (std::size_t i = 0; i < active_slots; ++i) {
+        const double x = input[i];
+        activated[i] = (x * x) + x + 1.0;
+    }
+    return activated;
 }
 
 double max_abs_error(const std::vector<double>& expected, const std::vector<double>& actual) {
@@ -148,11 +159,40 @@ std::vector<double> expected_mlp_output(const std::vector<double>& input,
     return {dot_product(hidden, output_weights)};
 }
 
+std::vector<double> expected_packed_outputs(const std::vector<double>& input,
+                                            std::vector<std::vector<double>>& weights,
+                                            std::size_t slot_count) {
+    std::vector<double> packed(slot_count, 0.0);
+    const std::vector<double> outputs = expected_linear_layer_output(input, weights);
+    for (std::size_t i = 0; i < outputs.size(); ++i) {
+        packed[i] = outputs[i];
+    }
+    return packed;
+}
+
+std::vector<double> expected_packed_sequence_output(const std::vector<double>& input,
+                                                    std::size_t active_tokens) {
+    std::vector<double> expected(input.size(), 0.0);
+    for (std::size_t i = 0; i < active_tokens; ++i) {
+        expected[i] = input[i];
+        if (i + 1 < active_tokens) {
+            expected[i] += 0.5 * input[i + 1];
+        }
+    }
+    return expected;
+}
+
 CKKSRuntime::Ciphertext apply_activation_polynomial(CKKSRuntime& runtime,
-                                                    const CKKSRuntime::Ciphertext& ciphertext) {
+                                                    const CKKSRuntime::Ciphertext& ciphertext,
+                                                    std::size_t active_slots,
+                                                    std::size_t total_slots) {
     const auto squared = runtime.multiply(ciphertext, ciphertext);
     const auto shifted = runtime.add(squared, ciphertext);
-    return runtime.add(shifted, runtime.encrypt(runtime.encode({1.0})));
+    std::vector<double> constant_mask(total_slots, 0.0);
+    for (std::size_t i = 0; i < active_slots; ++i) {
+        constant_mask[i] = 1.0;
+    }
+    return runtime.add(shifted, runtime.encrypt(runtime.encode(constant_mask)));
 }
 
 void print_vector(const std::string& label, const std::vector<double>& values) {
@@ -164,6 +204,32 @@ void print_vector(const std::string& label, const std::vector<double>& values) {
         }
     }
     std::cout << "]\n";
+}
+
+std::vector<int32_t> make_rotation_indices(std::size_t n, std::size_t output_slots = 0) {
+    std::vector<int32_t> rotation_indices;
+    for (std::size_t step = 1; step < n; step *= 2) {
+        rotation_indices.push_back(static_cast<int32_t>(step));
+        rotation_indices.push_back(-static_cast<int32_t>(step));
+    }
+    for (std::size_t slot = 1; slot < output_slots; ++slot) {
+        rotation_indices.push_back(-static_cast<int32_t>(slot));
+    }
+    return rotation_indices;
+}
+
+std::vector<double> slot_mask(std::size_t n, std::size_t index) {
+    std::vector<double> mask(n, 0.0);
+    mask[index] = 1.0;
+    return mask;
+}
+
+std::vector<double> prefix_mask(std::size_t n, std::size_t active_slots) {
+    std::vector<double> mask(n, 0.0);
+    for (std::size_t i = 0; i < active_slots; ++i) {
+        mask[i] = 1.0;
+    }
+    return mask;
 }
 
 void run_pipeline_demo(std::size_t n) {
@@ -203,19 +269,31 @@ double decrypt_slot0(CKKSRuntime& runtime,
     return runtime.decrypt_and_decode(ciphertext, length).front();
 }
 
+CKKSRuntime::Ciphertext packed_linear_outputs(CKKSRuntime& runtime,
+                                              const CKKSRuntime::Ciphertext& input_ciphertext,
+                                              std::vector<std::vector<double>>& weights,
+                                              std::size_t n) {
+    auto packed_output = runtime.multiply_plaintext(
+        reduce_sum_slots(runtime, runtime.multiply_plaintext(input_ciphertext, weights[0]), n),
+        slot_mask(n, 0));
+
+    for (std::size_t row = 1; row < weights.size(); ++row) {
+        const auto reduced = reduce_sum_slots(runtime, runtime.multiply_plaintext(input_ciphertext, weights[row]), n);
+        const auto slot0_only = runtime.multiply_plaintext(reduced, slot_mask(n, 0));
+        packed_output = runtime.add(packed_output, runtime.rotate(slot0_only, -static_cast<int>(row)));
+    }
+
+    return packed_output;
+}
+
 void run_linear_demo(std::size_t n) {
     if (!is_power_of_two(n)) {
         throw std::runtime_error("linear_demo requires --n to be a power of two");
     }
 
-    std::vector<int32_t> rotation_indices;
-    for (std::size_t step = 1; step < n; step *= 2) {
-        rotation_indices.push_back(static_cast<int32_t>(step));
-    }
-
     CKKSRuntime runtime;
     runtime.init(3, 50, static_cast<uint32_t>(n));
-    runtime.keygen(rotation_indices);
+    runtime.keygen(make_rotation_indices(n));
 
     const std::vector<double> input = make_input(n);
     const std::vector<double> weights = make_weights(n);
@@ -244,14 +322,9 @@ void run_linear_layer_demo(std::size_t n) {
         throw std::runtime_error("linear_layer_demo requires --n to be a power of two");
     }
 
-    std::vector<int32_t> rotation_indices;
-    for (std::size_t step = 1; step < n; step *= 2) {
-        rotation_indices.push_back(static_cast<int32_t>(step));
-    }
-
     CKKSRuntime runtime;
     runtime.init(3, 50, static_cast<uint32_t>(n));
-    runtime.keygen(rotation_indices);
+    runtime.keygen(make_rotation_indices(n));
 
     const std::vector<double> input = make_input(n);
     auto weights = make_weight_matrix(n);
@@ -285,6 +358,78 @@ void run_linear_layer_demo(std::size_t n) {
               << max_abs_error(expected, actual) << "\n";
 }
 
+void run_packed_linear_layer_demo(std::size_t n) {
+    if (!is_power_of_two(n)) {
+        throw std::runtime_error("packed_linear_layer_demo requires --n to be a power of two");
+    }
+
+    auto weights = make_weight_matrix(n);
+    weights[1] = std::vector<double>(n, 0.0);
+    for (std::size_t i = 0; i < n; ++i) {
+        weights[1][i] = (i % 2 == 0) ? 1.0 : 0.0;
+    }
+    if (weights.size() > n) {
+        throw std::runtime_error("packed_linear_layer_demo requires number of outputs <= --n");
+    }
+
+    CKKSRuntime runtime;
+    runtime.init(3, 50, static_cast<uint32_t>(n));
+    runtime.keygen(make_rotation_indices(n, weights.size()));
+
+    const std::vector<double> input = make_input(n);
+    const std::vector<double> expected_slots = expected_packed_outputs(input, weights, n);
+    const auto input_ciphertext = runtime.encrypt(runtime.encode(input));
+    const auto packed_output = packed_linear_outputs(runtime, input_ciphertext, weights, n);
+    const std::vector<double> actual_slots = runtime.decrypt_and_decode(packed_output, n);
+
+    std::cout << runtime.info() << "\n";
+    std::cout << "pipeline: plaintext -> encode -> encrypt -> repeated mul_ct_pt(row) -> rotate/add reduce -> mask slot0 -> place outputs into slots\n";
+    print_vector("input", input);
+    for (std::size_t row = 0; row < weights.size(); ++row) {
+        print_vector("weights[" + std::to_string(row) + "]", weights[row]);
+    }
+    print_vector("expected_packed_slots", expected_slots);
+    print_vector("actual_packed_slots", actual_slots);
+    std::cout << "max_abs_error: " << std::fixed << std::setprecision(8)
+              << max_abs_error(expected_slots, actual_slots) << "\n";
+}
+
+void run_packed_sequence_demo(std::size_t n) {
+    if (!is_power_of_two(n)) {
+        throw std::runtime_error("packed_sequence_demo requires --n to be a power of two");
+    }
+    if (n < 4) {
+        throw std::runtime_error("packed_sequence_demo requires --n >= 4");
+    }
+
+    constexpr std::size_t active_tokens = 4;
+
+    CKKSRuntime runtime;
+    runtime.init(3, 50, static_cast<uint32_t>(n));
+    runtime.keygen(make_rotation_indices(n, active_tokens));
+
+    const std::vector<double> input = make_input(n);
+    const std::vector<double> expected = expected_packed_sequence_output(input, active_tokens);
+    const auto input_ciphertext = runtime.encrypt(runtime.encode(input));
+
+    const auto shifted = runtime.rotate(input_ciphertext, 1);
+    const auto weighted_neighbor = runtime.multiply_plain(shifted, 0.5);
+    const auto masked_neighbor = runtime.multiply_plaintext(
+        weighted_neighbor,
+        prefix_mask(n, active_tokens - 1));
+    const auto mixed = runtime.add(input_ciphertext, masked_neighbor);
+    const auto output = runtime.multiply_plaintext(mixed, prefix_mask(n, active_tokens));
+    const std::vector<double> actual = runtime.decrypt_and_decode(output, n);
+
+    std::cout << runtime.info() << "\n";
+    std::cout << "pipeline: packed tokens in slots -> rotate(next token) -> scale(0.5) -> mask valid neighbors -> add residual -> mask active tokens\n";
+    print_vector("input_slots", input);
+    print_vector("expected_slots", expected);
+    print_vector("actual_slots", actual);
+    std::cout << "max_abs_error: " << std::fixed << std::setprecision(8)
+              << max_abs_error(expected, actual) << "\n";
+}
+
 void run_activation_demo(std::size_t n) {
     CKKSRuntime runtime;
     runtime.init(3, 50, static_cast<uint32_t>(n));
@@ -296,9 +441,7 @@ void run_activation_demo(std::size_t n) {
 
     const auto plaintext = runtime.encode(input);
     const auto ciphertext = runtime.encrypt(plaintext);
-    const auto squared = runtime.multiply(ciphertext, ciphertext);
-    const auto shifted = runtime.add(squared, ciphertext);
-    const auto activated = runtime.add(shifted, runtime.encrypt(runtime.encode(ones)));
+    const auto activated = apply_activation_polynomial(runtime, ciphertext, n, n);
     const std::vector<double> actual = runtime.decrypt_and_decode(activated, input.size());
 
     std::cout << runtime.info() << "\n";
@@ -315,51 +458,47 @@ void run_mlp_demo(std::size_t n) {
         throw std::runtime_error("mlp_demo requires --n to be a power of two");
     }
 
-    std::vector<int32_t> rotation_indices;
-    for (std::size_t step = 1; step < n; step *= 2) {
-        rotation_indices.push_back(static_cast<int32_t>(step));
-    }
-
-    CKKSRuntime runtime;
-    runtime.init(5, 50, static_cast<uint32_t>(n));
-    runtime.keygen(rotation_indices);
-
     const std::vector<double> input = make_input(n);
     auto hidden_weights = make_mlp_hidden_weights(n);
     const std::vector<double> output_weights = make_mlp_output_weights();
+
+    CKKSRuntime runtime;
+    runtime.init(5, 50, static_cast<uint32_t>(n));
+    runtime.keygen(make_rotation_indices(n, hidden_weights.size()));
+
     const std::vector<double> expected = expected_mlp_output(input, hidden_weights, output_weights);
+    const std::vector<double> expected_hidden_linear = expected_linear_layer_output(input, hidden_weights);
+    const std::vector<double> expected_hidden_packed = expected_packed_outputs(input, hidden_weights, n);
+    const std::vector<double> expected_hidden_activated =
+        apply_activation_polynomial(expected_hidden_packed, hidden_weights.size(), n);
 
     const auto input_ciphertext = runtime.encrypt(runtime.encode(input));
+    const auto hidden_linear_ciphertext = packed_linear_outputs(runtime, input_ciphertext, hidden_weights, n);
+    const std::vector<double> hidden_linear_actual = runtime.decrypt_and_decode(hidden_linear_ciphertext, n);
+    const auto hidden_activated_ciphertext =
+        apply_activation_polynomial(runtime, hidden_linear_ciphertext, hidden_weights.size(), n);
+    const std::vector<double> hidden_activated_actual = runtime.decrypt_and_decode(hidden_activated_ciphertext, n);
 
-    std::vector<double> hidden_linear;
-    hidden_linear.reserve(hidden_weights.size());
-    std::vector<CKKSRuntime::Ciphertext> hidden_activated_ciphertexts;
-    hidden_activated_ciphertexts.reserve(hidden_weights.size());
-
-    for (const auto& row : hidden_weights) {
-        const auto reduced = reduce_sum_slots(runtime, runtime.multiply_plaintext(input_ciphertext, row), n);
-        hidden_linear.push_back(decrypt_slot0(runtime, reduced, n));
-        hidden_activated_ciphertexts.push_back(apply_activation_polynomial(runtime, reduced));
+    std::vector<double> output_weight_slots(n, 0.0);
+    for (std::size_t i = 0; i < output_weights.size(); ++i) {
+        output_weight_slots[i] = output_weights[i];
     }
 
-    const std::vector<double> hidden_activated = apply_activation_polynomial(hidden_linear);
-    auto output_ciphertext = runtime.multiply_plain(hidden_activated_ciphertexts[0], output_weights[0]);
-    for (std::size_t i = 1; i < hidden_activated_ciphertexts.size(); ++i) {
-        output_ciphertext = runtime.add(
-            output_ciphertext,
-            runtime.multiply_plain(hidden_activated_ciphertexts[i], output_weights[i]));
-    }
-    const std::vector<double> actual = {decrypt_slot0(runtime, output_ciphertext, 1)};
+    const auto weighted_output = runtime.multiply_plaintext(hidden_activated_ciphertext, output_weight_slots);
+    const auto output_reduced = reduce_sum_slots(runtime, weighted_output, n);
+    const std::vector<double> actual = {decrypt_slot0(runtime, output_reduced, n)};
 
     std::cout << runtime.info() << "\n";
-    std::cout << "pipeline: input -> encrypted linear layer -> encrypted activation -> encrypted output layer -> decrypt\n";
+    std::cout << "pipeline: input -> packed encrypted linear layer -> packed encrypted activation -> packed encrypted output reduction -> decrypt\n";
     print_vector("input", input);
     for (std::size_t row = 0; row < hidden_weights.size(); ++row) {
         print_vector("hidden_weights[" + std::to_string(row) + "]", hidden_weights[row]);
     }
-    print_vector("hidden_linear_expected", expected_linear_layer_output(input, hidden_weights));
-    print_vector("hidden_linear_actual", hidden_linear);
-    print_vector("hidden_activated", hidden_activated);
+    print_vector("hidden_linear_expected", expected_hidden_linear);
+    print_vector("hidden_linear_actual", hidden_linear_actual);
+    print_vector("hidden_linear_expected_packed", expected_hidden_packed);
+    print_vector("hidden_activated_expected_packed", expected_hidden_activated);
+    print_vector("hidden_activated_actual_packed", hidden_activated_actual);
     print_vector("output_weights", output_weights);
     print_vector("expected_output", expected);
     print_vector("actual_output", actual);
@@ -383,6 +522,14 @@ int main(int argc, char* argv[]) {
         }
         if (options.op == "linear_layer_demo") {
             run_linear_layer_demo(options.n);
+            return 0;
+        }
+        if (options.op == "packed_linear_layer_demo") {
+            run_packed_linear_layer_demo(options.n);
+            return 0;
+        }
+        if (options.op == "packed_sequence_demo") {
+            run_packed_sequence_demo(options.n);
             return 0;
         }
         if (options.op == "activation_demo") {
