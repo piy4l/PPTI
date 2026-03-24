@@ -18,7 +18,7 @@ struct Options {
 
 void print_usage(const char* argv0) {
     std::cout << "Usage: " << argv0
-              << " [--op pipeline_demo|linear_demo|linear_layer_demo|activation_demo] [--n 8]\n";
+              << " [--op pipeline_demo|linear_demo|linear_layer_demo|activation_demo|mlp_demo] [--n 8]\n";
 }
 
 Options parse_args(int argc, char* argv[]) {
@@ -77,6 +77,10 @@ std::vector<double> expected_activation_output(const std::vector<double>& input)
     return expected;
 }
 
+std::vector<double> apply_activation_polynomial(const std::vector<double>& input) {
+    return expected_activation_output(input);
+}
+
 double max_abs_error(const std::vector<double>& expected, const std::vector<double>& actual) {
     double max_error = 0.0;
     for (std::size_t i = 0; i < expected.size(); ++i) {
@@ -113,6 +117,19 @@ std::vector<std::vector<double>> make_weight_matrix(std::size_t n) {
     };
 }
 
+std::vector<std::vector<double>> make_mlp_hidden_weights(std::size_t n) {
+    std::vector<std::vector<double>> weights(2, std::vector<double>(n, 0.0));
+    for (std::size_t i = 0; i < n; ++i) {
+        weights[0][i] = 0.25 * static_cast<double>(i + 1);
+        weights[1][i] = (i % 2 == 0) ? 0.5 : -0.25;
+    }
+    return weights;
+}
+
+std::vector<double> make_mlp_output_weights() {
+    return {1.5, -0.5};
+}
+
 std::vector<double> expected_linear_layer_output(const std::vector<double>& input,
                                                  std::vector<std::vector<double>>& weights) {
     std::vector<double> expected;
@@ -121,6 +138,21 @@ std::vector<double> expected_linear_layer_output(const std::vector<double>& inpu
         expected.push_back(dot_product(input, row));
     }
     return expected;
+}
+
+std::vector<double> expected_mlp_output(const std::vector<double>& input,
+                                        std::vector<std::vector<double>>& hidden_weights,
+                                        const std::vector<double>& output_weights) {
+    std::vector<double> hidden = expected_linear_layer_output(input, hidden_weights);
+    hidden = apply_activation_polynomial(hidden);
+    return {dot_product(hidden, output_weights)};
+}
+
+CKKSRuntime::Ciphertext apply_activation_polynomial(CKKSRuntime& runtime,
+                                                    const CKKSRuntime::Ciphertext& ciphertext) {
+    const auto squared = runtime.multiply(ciphertext, ciphertext);
+    const auto shifted = runtime.add(squared, ciphertext);
+    return runtime.add(shifted, runtime.encrypt(runtime.encode({1.0})));
 }
 
 void print_vector(const std::string& label, const std::vector<double>& values) {
@@ -163,6 +195,12 @@ CKKSRuntime::Ciphertext reduce_sum_slots(CKKSRuntime& runtime,
         ciphertext = runtime.add(ciphertext, runtime.rotate(ciphertext, static_cast<int>(step)));
     }
     return ciphertext;
+}
+
+double decrypt_slot0(CKKSRuntime& runtime,
+                     const CKKSRuntime::Ciphertext& ciphertext,
+                     std::size_t length) {
+    return runtime.decrypt_and_decode(ciphertext, length).front();
 }
 
 void run_linear_demo(std::size_t n) {
@@ -272,6 +310,63 @@ void run_activation_demo(std::size_t n) {
               << max_abs_error(expected, actual) << "\n";
 }
 
+void run_mlp_demo(std::size_t n) {
+    if (!is_power_of_two(n)) {
+        throw std::runtime_error("mlp_demo requires --n to be a power of two");
+    }
+
+    std::vector<int32_t> rotation_indices;
+    for (std::size_t step = 1; step < n; step *= 2) {
+        rotation_indices.push_back(static_cast<int32_t>(step));
+    }
+
+    CKKSRuntime runtime;
+    runtime.init(5, 50, static_cast<uint32_t>(n));
+    runtime.keygen(rotation_indices);
+
+    const std::vector<double> input = make_input(n);
+    auto hidden_weights = make_mlp_hidden_weights(n);
+    const std::vector<double> output_weights = make_mlp_output_weights();
+    const std::vector<double> expected = expected_mlp_output(input, hidden_weights, output_weights);
+
+    const auto input_ciphertext = runtime.encrypt(runtime.encode(input));
+
+    std::vector<double> hidden_linear;
+    hidden_linear.reserve(hidden_weights.size());
+    std::vector<CKKSRuntime::Ciphertext> hidden_activated_ciphertexts;
+    hidden_activated_ciphertexts.reserve(hidden_weights.size());
+
+    for (const auto& row : hidden_weights) {
+        const auto reduced = reduce_sum_slots(runtime, runtime.multiply_plaintext(input_ciphertext, row), n);
+        hidden_linear.push_back(decrypt_slot0(runtime, reduced, n));
+        hidden_activated_ciphertexts.push_back(apply_activation_polynomial(runtime, reduced));
+    }
+
+    const std::vector<double> hidden_activated = apply_activation_polynomial(hidden_linear);
+    auto output_ciphertext = runtime.multiply_plain(hidden_activated_ciphertexts[0], output_weights[0]);
+    for (std::size_t i = 1; i < hidden_activated_ciphertexts.size(); ++i) {
+        output_ciphertext = runtime.add(
+            output_ciphertext,
+            runtime.multiply_plain(hidden_activated_ciphertexts[i], output_weights[i]));
+    }
+    const std::vector<double> actual = {decrypt_slot0(runtime, output_ciphertext, 1)};
+
+    std::cout << runtime.info() << "\n";
+    std::cout << "pipeline: input -> encrypted linear layer -> encrypted activation -> encrypted output layer -> decrypt\n";
+    print_vector("input", input);
+    for (std::size_t row = 0; row < hidden_weights.size(); ++row) {
+        print_vector("hidden_weights[" + std::to_string(row) + "]", hidden_weights[row]);
+    }
+    print_vector("hidden_linear_expected", expected_linear_layer_output(input, hidden_weights));
+    print_vector("hidden_linear_actual", hidden_linear);
+    print_vector("hidden_activated", hidden_activated);
+    print_vector("output_weights", output_weights);
+    print_vector("expected_output", expected);
+    print_vector("actual_output", actual);
+    std::cout << "max_abs_error: " << std::fixed << std::setprecision(8)
+              << max_abs_error(expected, actual) << "\n";
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -292,6 +387,10 @@ int main(int argc, char* argv[]) {
         }
         if (options.op == "activation_demo") {
             run_activation_demo(options.n);
+            return 0;
+        }
+        if (options.op == "mlp_demo") {
+            run_mlp_demo(options.n);
             return 0;
         }
 
