@@ -1,0 +1,11 @@
+system,op,shape,impl,avg_ms,notes
+nexus_official,bench_matmul_qkv,R128x768_x_R768x768,optimized,9000.000000,paper_table4;time_s=9;source=NEXUS_Table4
+nexus_official,bench_softmax,12xR128x128,optimized,242000.000000,paper_table3_table4;time_s=242;source=NEXUS_Table3_Table4
+nexus_official,bench_matmul_attn_v,R128x128_x_R128x768,optimized,32000.000000,paper_table4;time_s=32;source=NEXUS_Table4
+nexus_official,bench_layernorm,24xR128x768,optimized,81000.000000,paper_table3;time_s=81;source=NEXUS_Table3
+nexus_official,bench_layernorm_runtime_breakdown,R128x768,optimized,40000.000000,paper_table4;time_s=40;source=NEXUS_Table4
+nexus_official,bench_matmul_ffn1,R128x768_x_R768x3072,optimized,36000.000000,paper_table4;time_s=36;source=NEXUS_Table4
+nexus_official,bench_gelu,12xR128x3072,optimized,233000.000000,paper_table3_table4;time_s=233;source=NEXUS_Table3_Table4
+nexus_official,bench_matmul_ffn2,R128x3072_x_R3072x768,optimized,23000.000000,paper_table4;time_s=23;source=NEXUS_Table4
+nexus_official,bench_argmax,R128,optimized,28000.000000,paper_table3_table4;time_s=28;source=NEXUS_Table3_Table4
+nexus_official,end_to_end_bert_base,amortized_128_inputs,optimized,1103000.000000,paper_table4_and_text;time_s=1103;source=NEXUS_Table4

@@ -1,22 +1,10 @@
-from typing import Any
+from typing import Any, Optional
 
 from graph import Graph
 from ops import Domain, OpKind
 
 
-def estimate_cost(graph: Graph) -> dict[str, Any]:
-    """
-    Simple symbolic cost model.
-
-    For now we estimate:
-    - number of HE<->MPC / HE<->PLAIN / MPC<->PLAIN boundaries
-    - rough truncation count
-    - rough rotation count
-    - ciphertext-ciphertext multiplication count
-
-    This is intentionally simple. Later we will replace parts of it
-    with measured costs from the C++ OpenFHE backend.
-    """
+def estimate_cost(graph: Graph, he_cost_model: Optional[object] = None) -> dict[str, Any]:
     stats = {
         "num_nodes": 0,
         "num_he_nodes": 0,
@@ -27,6 +15,7 @@ def estimate_cost(graph: Graph) -> dict[str, Any]:
         "num_rotations": 0,
         "num_ct_ct_mults": 0,
         "boundary_edges": [],
+        "estimated_he_time_ms": 0.0,
     }
 
     for node in graph.topological_order():
@@ -39,21 +28,29 @@ def estimate_cost(graph: Graph) -> dict[str, Any]:
         elif node.domain == Domain.PLAIN:
             stats["num_plain_nodes"] += 1
 
-        # Very rough op-level costs inside HE
         if node.domain == Domain.HE:
-            if node.kind == OpKind.MATMUL:
-                # MatMul is usually the heaviest HE op family.
-                # Start with a symbolic rotation estimate of 1.
-                # Later we will replace this with dimension-aware logic.
-                stats["num_rotations"] += 1
+            n = 16
 
-            if node.kind == OpKind.MUL:
-                # Treat HE multiply as a ct-ct multiply candidate.
-                # Later we can distinguish ct-pt vs ct-ct.
+            if node.kind == OpKind.MATMUL:
+                stats["num_rotations"] += 2
+                if he_cost_model is not None:
+                    stats["estimated_he_time_ms"] += 2.0 * he_cost_model.rotate_cost(n, 1, 10, 3)
+
+            elif node.kind == OpKind.SUM:
+                stats["num_rotations"] += 1
+                if he_cost_model is not None:
+                    stats["estimated_he_time_ms"] += he_cost_model.rotate_cost(n, 1, 10, 3)
+
+            elif node.kind == OpKind.MUL:
                 stats["num_ct_ct_mults"] += 1
                 stats["num_truncations"] += 1
+                if he_cost_model is not None:
+                    stats["estimated_he_time_ms"] += he_cost_model.mul_ct_ct_cost(n, 10, 3)
 
-        # Count domain-boundary conversions on edges
+            elif node.kind == OpKind.ADD:
+                if he_cost_model is not None:
+                    stats["estimated_he_time_ms"] += he_cost_model.add_plain_cost(n, 5.0, 10, 3)
+
         for pred in graph.predecessors(node.name):
             if pred.domain is None or node.domain is None:
                 continue
@@ -75,14 +72,15 @@ def estimate_cost(graph: Graph) -> dict[str, Any]:
 def format_cost_report(stats: dict[str, Any]) -> str:
     lines = [
         "=== Cost Report ===",
-        f"Nodes            : {stats['num_nodes']}",
-        f"HE nodes         : {stats['num_he_nodes']}",
-        f"MPC nodes        : {stats['num_mpc_nodes']}",
-        f"Plain nodes      : {stats['num_plain_nodes']}",
-        f"Conversions      : {stats['num_conversions']}",
-        f"Truncations      : {stats['num_truncations']}",
-        f"Rotations        : {stats['num_rotations']}",
-        f"CT-CT multiplies : {stats['num_ct_ct_mults']}",
+        f"Nodes                : {stats['num_nodes']}",
+        f"HE nodes             : {stats['num_he_nodes']}",
+        f"MPC nodes            : {stats['num_mpc_nodes']}",
+        f"Plain nodes          : {stats['num_plain_nodes']}",
+        f"Conversions          : {stats['num_conversions']}",
+        f"Truncations          : {stats['num_truncations']}",
+        f"Rotations            : {stats['num_rotations']}",
+        f"CT-CT multiplies     : {stats['num_ct_ct_mults']}",
+        f"Estimated HE time ms : {stats['estimated_he_time_ms']:.6f}",
     ]
 
     if stats["boundary_edges"]:

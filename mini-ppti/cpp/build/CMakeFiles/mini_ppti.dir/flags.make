@@ -6,7 +6,5 @@ CXX_DEFINES =
 
 CXX_INCLUDES = -I/Users/souvik/Desktop/PPTI/mini-ppti/cpp/include -I/usr/local/include/openfhe -I/usr/local/include/openfhe/core -I/usr/local/include/openfhe/pke -I/usr/local/include/openfhe/binfhe -isystem /opt/homebrew/opt/libomp/include
 
-CXX_FLAGSarm64 = -O3 -DNDEBUG -std=gnu++17 -arch arm64 -Xclang -fopenmp
-
-CXX_FLAGS = -O3 -DNDEBUG -std=gnu++17 -arch arm64 -Xclang -fopenmp
+CXX_FLAGS = -O3 -DNDEBUG -std=gnu++17 -Xclang -fopenmp
 

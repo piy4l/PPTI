@@ -1,0 +1,4 @@
+system,op,shape,impl,avg_ms,notes
+nexus_official,bench_matmul,4x4_blockdiag_x4,optimized,0.0,replace with official NEXUS runtime
+nexus_official,bench_layernorm,1x16,optimized,0.0,replace with official NEXUS runtime
+nexus_official,bench_argmax,1x16,optimized,0.0,replace with official NEXUS runtime

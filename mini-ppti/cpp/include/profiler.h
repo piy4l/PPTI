@@ -2,7 +2,6 @@
 #define PROFILER_H
 
 #include <chrono>
-#include <map>
 #include <string>
 #include <vector>
 
@@ -18,6 +17,7 @@ public:
     void add_record(const ProfileRecord& record);
     void print_summary() const;
     void print_csv() const;
+    const std::vector<ProfileRecord>& get_records() const;
 
 private:
     std::vector<ProfileRecord> records_;

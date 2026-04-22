@@ -1,0 +1,4 @@
+system,op,shape,impl,avg_ms,notes
+mini_ppti_baseline,bench_matmul,4x4_blockdiag_x4,baseline,759.075500,impl=baseline;shape=4x4_blockdiag_x4
+mini_ppti_baseline,bench_layernorm,1x16,baseline,1045.452292,impl=baseline;shape=1x16
+mini_ppti_baseline,bench_argmax,1x16,baseline,5188.106042,impl=baseline;shape=1x16

@@ -1,0 +1,7 @@
+system,op,shape,impl,avg_ms,notes
+mini_ppti_baseline,bench_matmul_qkv,R128x768_x_R768x768,optimized,119.470709,impl=optimized;shape=R128x768_x_R768x768;surrogate=4x4_blockdiag_x32
+mini_ppti_baseline,bench_matmul_attn_v,R128x128_x_R128x768,optimized,121.936458,impl=optimized;shape=R128x128_x_R128x768;surrogate=4x4_blockdiag_x32
+mini_ppti_baseline,bench_matmul_ffn1,R128x768_x_R768x3072,optimized,123.154208,impl=optimized;shape=R128x768_x_R768x3072;surrogate=4x4_blockdiag_x32
+mini_ppti_baseline,bench_matmul_ffn2,R128x3072_x_R3072x768,optimized,121.365042,impl=optimized;shape=R128x3072_x_R3072x768;surrogate=4x4_blockdiag_x32
+mini_ppti_baseline,bench_layernorm_r128,R128,optimized,579.067792,impl=optimized;shape=R128;surrogate=1x128_vs_24xR128x768
+mini_ppti_baseline,bench_argmax,R128,optimized,10353.151167,impl=optimized;shape=R128

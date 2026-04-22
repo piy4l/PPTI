@@ -1,0 +1,4 @@
+system,op,shape,impl,avg_ms,notes
+mini_ppti_baseline,bench_matmul,4x4_blockdiag_x4,baseline,0.0,replace with local baseline runtime
+mini_ppti_baseline,bench_layernorm,1x16,baseline,0.0,replace with local baseline runtime
+mini_ppti_baseline,bench_argmax,1x16,baseline,0.0,replace with local baseline runtime

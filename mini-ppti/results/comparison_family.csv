@@ -1,0 +1,4 @@
+key,nexus_shape,baseline_shape,nexus_ms,baseline_ms,slowdown
+argmax,paper_mixed_family,local_mixed_family,28000.000000,5188.106042,0.185290
+layernorm,paper_mixed_family,local_mixed_family,60500.000000,1045.452292,0.017280
+matmul,paper_mixed_family,local_mixed_family,25000.000000,759.075500,0.030363

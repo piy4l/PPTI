@@ -1,0 +1,2 @@
+op,nexus_ms,baseline_ms,baseline_vs_nexus,nexus_metric_name,nexus_metric_value,baseline_metric_name,baseline_metric_value,nexus_mode
+gelu,4411.000000,91.547500,0.020754,Mean Absolute Error,0.001197,Mean Absolute Error,3.976284,nexus-source-local

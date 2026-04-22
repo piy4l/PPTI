@@ -1,0 +1,10 @@
+cd ~/Desktop/PPTI/mini-ppti/cpp
+rm -rf build
+
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DOpenFHE_DIR=/usr/local/lib/cmake/openfhe \
+  -DOpenMP_ROOT=/opt/homebrew/opt/libomp
+
+cmake --build build -j$(sysctl -n hw.ncpu)
+./build/mini_ppti

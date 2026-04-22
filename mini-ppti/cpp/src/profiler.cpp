@@ -7,6 +7,10 @@ void Profiler::add_record(const ProfileRecord& record) {
     records_.push_back(record);
 }
 
+const std::vector<ProfileRecord>& Profiler::get_records() const {
+    return records_;
+}
+
 void Profiler::print_summary() const {
     std::cout << "\n=== Profiling Summary ===\n";
     std::cout << std::left
@@ -25,7 +29,6 @@ void Profiler::print_summary() const {
 }
 
 void Profiler::print_csv() const {
-    std::cout << "\n=== Profiling CSV ===\n";
     std::cout << "op_name,time_ms,input_size,metadata\n";
     for (const auto& record : records_) {
         std::cout << record.op_name << ","
